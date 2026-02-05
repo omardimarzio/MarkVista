@@ -1,0 +1,13 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "outDir": "../dist-electron",
+        "module": "commonjs",
+        "target": "es6",
+        "noEmit": false,
+        "esModuleInterop": true
+    },
+    "include": [
+        "."
+    ]
+}
