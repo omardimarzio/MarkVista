@@ -20,3 +20,13 @@ declare global {
         electronAPI: ElectronAPI;
     }
 }
+
+import { Content } from '@tiptap/react';
+
+declare module '@tiptap/core' {
+    interface Commands<ReturnType> {
+        search: {
+            setSearchQuery: (query: string) => ReturnType;
+        };
+    }
+}
