@@ -100,7 +100,14 @@ const createMenu = (win: BrowserWindow) => {
           ? [
             { role: 'pasteAndMatchStyle' },
             { role: 'delete' },
+            { role: 'delete' },
             { role: 'selectAll' },
+            { type: 'separator' },
+            {
+              label: 'Find',
+              accelerator: 'CmdOrCtrl+F',
+              click: () => win.webContents.send('menu:find')
+            },
             { type: 'separator' },
             {
               label: 'Speech',
@@ -113,7 +120,13 @@ const createMenu = (win: BrowserWindow) => {
           : [
             { role: 'delete' },
             { type: 'separator' },
-            { role: 'selectAll' }
+            { role: 'selectAll' },
+            { type: 'separator' },
+            {
+              label: 'Find',
+              accelerator: 'CmdOrCtrl+F',
+              click: () => win.webContents.send('menu:find')
+            }
           ])
       ]
     },

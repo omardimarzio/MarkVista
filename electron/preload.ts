@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         // My main.ts sends 'menu:new', 'menu:open', etc.
         // I should set up listeners for each or change main.ts to send 'menu:action', 'new'.
         // Changing main.ts is annoying now. I will just listen to all using a list.
-        const channels = ['menu:new', 'menu:open', 'menu:save', 'menu:save-as'];
+        const channels = ['menu:new', 'menu:open', 'menu:save', 'menu:save-as', 'menu:find'];
         const listeners: Record<string, any> = {};
 
         channels.forEach(channel => {

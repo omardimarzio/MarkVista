@@ -11,7 +11,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import Highlight from '@tiptap/extension-highlight';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface VisualModeProps {
     content: string; // HTML content
@@ -19,15 +19,119 @@ interface VisualModeProps {
     onSelectionUpdate?: () => void;
     className?: string;
     onEditorReady?: (editor: any) => void;
+    searchQuery?: string;
+    searchAction?: { type: 'next' | 'previous' | 'none', id?: number };
+    onSearchStats?: (current: number, total: number) => void;
 }
 
-export const VisualMode = ({ content, onChange, onSelectionUpdate, className, onEditorReady }: VisualModeProps) => {
+// Simple implementation of search using TextSelection for now.
+// For robust highlighting, we need a NodeView or decoration-based extension.
+
+import { Extension } from '@tiptap/core';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
+
+// Search Extension for highlighting
+const SearchExtension = Extension.create({
+    name: 'search',
+
+    addOptions() {
+        return {
+            searchClassName: 'search-result',
+        };
+    },
+
+    addCommands() {
+        return {
+            setSearchQuery: (query: string) => ({ tr, dispatch }: any) => {
+                if (dispatch) {
+                    dispatch(tr.setMeta('searchQuery', query));
+                }
+                return true;
+            },
+        };
+    },
+
+    addProseMirrorPlugins() {
+        return [
+            new Plugin({
+                key: new PluginKey('search'),
+                state: {
+                    init() {
+                        return { query: '', decorations: DecorationSet.empty };
+                    },
+                    apply(tr: any, prevState: any) {
+                        const metaQuery = tr.getMeta('searchQuery');
+                        const newQuery = metaQuery !== undefined ? metaQuery : prevState.query;
+
+                        // If query unchanged and doc unchanged, just map decorations
+                        if (newQuery === prevState.query && !tr.docChanged) {
+                            return {
+                                query: prevState.query,
+                                decorations: prevState.decorations.map(tr.mapping, tr.doc)
+                            };
+                        }
+
+                        // If doc changed but query is same, remap decorations
+                        if (newQuery === prevState.query) {
+                            return {
+                                query: prevState.query,
+                                decorations: prevState.decorations.map(tr.mapping, tr.doc)
+                            };
+                        }
+
+                        // Calculate new decorations for new query by iterating over text nodes
+                        const decorations: Decoration[] = [];
+                        if (newQuery) {
+                            const escapedQuery = newQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            const regex = new RegExp(escapedQuery, 'gi');
+
+                            // Properly iterate over text nodes to get correct positions
+                            tr.doc.descendants((node: any, pos: number) => {
+                                if (node.isText && node.text) {
+                                    let match;
+                                    while ((match = regex.exec(node.text))) {
+                                        const from = pos + match.index;
+                                        const to = from + match[0].length;
+                                        decorations.push(
+                                            Decoration.inline(from, to, {
+                                                style: 'background-color: #fef08a; color: #000; border-radius: 2px;',
+                                            })
+                                        );
+                                    }
+                                    // Reset regex for next node
+                                    regex.lastIndex = 0;
+                                }
+                            });
+                        }
+
+                        return {
+                            query: newQuery,
+                            decorations: DecorationSet.create(tr.doc, decorations),
+                        };
+                    },
+                },
+                props: {
+                    decorations(state: any) {
+                        return this.getState(state)?.decorations;
+                    },
+                },
+            }),
+        ];
+    },
+});
+
+export const VisualMode = ({ content, onChange, onSelectionUpdate, className, onEditorReady, searchQuery, searchAction, onSearchStats }: VisualModeProps) => {
+
+    // We need to keep track of matches
+    const [matches, setMatches] = useState<{ from: number, to: number }[]>([]);
+    const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+
     const editor = useEditor({
-        immediatelyRender: false, // Required for React 18 / SSR / Electron environments
+        immediatelyRender: false,
         extensions: [
             StarterKit.configure({
                 codeBlock: false,
-                // We use our own Link extension configuration
             }),
             Image,
             Link.configure({
@@ -48,13 +152,13 @@ export const VisualMode = ({ content, onChange, onSelectionUpdate, className, on
             Highlight.configure({ multicolor: true }),
             Subscript,
             Superscript,
+            SearchExtension,
         ],
         content: content,
         onUpdate: ({ editor }) => {
             onChange(editor.getHTML());
         },
         onCreate: ({ editor }) => {
-            console.log('Tiptap Editor CREATED. View exists?', !!editor.view);
             if (onEditorReady) {
                 onEditorReady(editor);
             }
@@ -64,7 +168,95 @@ export const VisualMode = ({ content, onChange, onSelectionUpdate, className, on
                 class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl m-5 focus:outline-none',
             },
         },
-    });
+    }, []); // Ensure editor is created only once
+
+    // Handle Search Logic
+    useEffect(() => {
+        if (!editor) return;
+
+        // Update Highlighting via Extension
+        // @ts-ignore
+        editor.commands.setSearchQuery(searchQuery || '');
+
+        if (!searchQuery) {
+            setMatches([]);
+            setCurrentMatchIndex(-1);
+            return;
+        }
+
+        // Find all matches for Navigation State by iterating over text nodes
+        const doc = editor.state.doc;
+        const found: { from: number, to: number }[] = [];
+        const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escapedQuery, 'gi');
+
+        // Properly iterate over text nodes to get correct positions
+        doc.descendants((node, pos) => {
+            if (node.isText && node.text) {
+                let match;
+                while ((match = regex.exec(node.text))) {
+                    const from = pos + match.index;
+                    const to = from + match[0].length;
+                    found.push({ from, to });
+                }
+                // Reset regex for next node
+                regex.lastIndex = 0;
+            }
+        });
+
+        setMatches(found);
+
+        if (found.length > 0) {
+            setCurrentMatchIndex(0);
+            // Select first match (without stealing focus from search input)
+            const first = found[0];
+            editor.commands.setTextSelection({ from: first.from, to: first.to });
+            // Don't call focus() here - it would steal focus from the search input
+        } else {
+            setCurrentMatchIndex(-1);
+        }
+
+        if (onSearchStats) onSearchStats(found.length > 0 ? 1 : 0, found.length);
+
+    }, [editor, searchQuery]);
+
+    // Handle Search Action (Next/Prev)
+    useEffect(() => {
+        if (!editor || matches.length === 0 || searchAction?.type === 'none') return;
+
+        let nextIndex = currentMatchIndex;
+
+        if (searchAction?.type === 'next') {
+            nextIndex = (currentMatchIndex + 1) % matches.length;
+        } else if (searchAction?.type === 'previous') {
+            nextIndex = (currentMatchIndex - 1 + matches.length) % matches.length;
+        }
+
+        setCurrentMatchIndex(nextIndex);
+        const match = matches[nextIndex];
+
+        editor.commands.setTextSelection({ from: match.from, to: match.to });
+        editor.commands.focus();
+
+        // Scroll the selection into view using DOM API
+        setTimeout(() => {
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                const rect = range.getBoundingClientRect();
+                const container = editor.view.dom.closest('.overflow-y-auto') || editor.view.dom.parentElement;
+                if (container && rect) {
+                    const containerRect = container.getBoundingClientRect();
+                    const scrollTop = rect.top - containerRect.top - containerRect.height / 2 + container.scrollTop;
+                    container.scrollTo({ top: scrollTop, behavior: 'smooth' });
+                }
+            }
+        }, 50);
+
+        if (onSearchStats) onSearchStats(nextIndex + 1, matches.length);
+
+    }, [searchAction]);
+
 
     useEffect(() => {
         if (!editor) return;

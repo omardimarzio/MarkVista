@@ -15,9 +15,10 @@ interface TopToolbarProps {
     onSave: () => void;
     onSaveAs: () => void;
     onExportPdf: () => void;
+    onFind: () => void;
 }
 
-export const TopToolbar = ({ mode, onToggleMode, editor, onNew, onOpen, onSave, onSaveAs, onExportPdf }: TopToolbarProps) => {
+export const TopToolbar = ({ mode, onToggleMode, editor, onNew, onOpen, onSave, onSaveAs, onExportPdf, onFind }: TopToolbarProps) => {
     // Debug (uncomment to troubleshoot)
     // console.log('TopToolbar Render. Editor exists?', !!editor);
 
@@ -168,6 +169,25 @@ export const TopToolbar = ({ mode, onToggleMode, editor, onNew, onOpen, onSave, 
                     <span className="text-sm text-[var(--text-secondary)] font-mono">Code Mode</span>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Button variant="ghost" onClick={onFind} title="Find (Cmd+F)" className="px-2">
+                        <search className="w-4 h-4" /> {/* Fallback or use Lucide Search */}
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="lucide lucide-search"
+                        >
+                            <circle cx="11" cy="11" r="8" />
+                            <path d="m21 21-4.3-4.3" />
+                        </svg>
+                    </Button>
+                    <div className="w-px h-6 bg-[var(--border-color)] mx-1" />
                     <Button onClick={onToggleMode} variant="secondary" className="px-3 py-1 text-sm">
                         Switch to Visual
                     </Button>
@@ -178,6 +198,7 @@ export const TopToolbar = ({ mode, onToggleMode, editor, onNew, onOpen, onSave, 
             </div>
         );
     }
+
 
     // Determine current heading level for select
     let currentHeading = 'paragraph';
@@ -444,6 +465,24 @@ export const TopToolbar = ({ mode, onToggleMode, editor, onNew, onOpen, onSave, 
                 </div>
 
                 <div className="flex items-center gap-4">
+                    <Button variant="ghost" onClick={onFind} title="Find (Cmd+F)" className="px-2">
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="lucide lucide-search"
+                        >
+                            <circle cx="11" cy="11" r="8" />
+                            <path d="m21 21-4.3-4.3" />
+                        </svg>
+                    </Button>
+                    <div className="w-px h-6 bg-[var(--border-color)] mx-1" />
                     {/* Zoom Removed per request */}
                     <Button onClick={onToggleMode} variant="secondary" className="px-3 py-1 text-sm gap-2">
                         <Code size={16} />

@@ -1,10 +1,11 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { VisualMode } from './VisualMode';
 import { CodeMode } from './CodeMode';
 import { TopToolbar } from '../Layout/TopToolbar';
 import { StatusBar } from '../Layout/StatusBar';
 import { ConfirmationModal } from '../UI/ConfirmationModal';
 import { TitleBar } from '../Layout/TitleBar';
+import { SearchToolbar } from './SearchToolbar';
 import { useFileIO } from '../../hooks/useFileIO';
 import MarkdownIt from 'markdown-it';
 import TurndownService from 'turndown';
@@ -415,8 +416,97 @@ export const EditorManager = () => {
 
     const handleZoomChange = useCallback((level: number) => setZoomLevel(level), []);
 
+    // Refs for Event Handlers to avoid dependency churn
+    const contentRef = useRef(content);
+    const modeRef = useRef(mode);
+    const editorInstanceRef = useRef(editorInstance);
+    // Sync refs
+    useEffect(() => { contentRef.current = content; }, [content]);
+    useEffect(() => { modeRef.current = mode; }, [mode]);
+    useEffect(() => { editorInstanceRef.current = editorInstance; }, [editorInstance]);
+
+    // We need usage of these refs in the handlers called by onMenuAction
+    // However, handleSave calls saveFile which is from a hook. 
+    // Easier approach: stable handlers that call the current version of the logic?
+    // Or just use the Refs inside `handleSave`.
+    // Let's modify handleSave and friends to use Refs or be wrapped.
+
+    // Better: wrap the stable listener to call the latest callbacks.
+    const handleNewRef = useRef(handleNew);
+    const handleOpenRef = useRef(handleOpen);
+    const handleSaveRef = useRef(handleSave);
+    const handleSaveAsRef = useRef(handleSaveAs);
+
+    useEffect(() => { handleNewRef.current = handleNew; }, [handleNew]);
+    useEffect(() => { handleOpenRef.current = handleOpen; }, [handleOpen]);
+    useEffect(() => { handleSaveRef.current = handleSave; }, [handleSave]);
+    useEffect(() => { handleSaveAsRef.current = handleSaveAs; }, [handleSaveAs]);
+
+
+    // Search State
+    const [isSearchVisible, setIsSearchVisible] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [currentMatch, setCurrentMatch] = useState(0);
+    const [totalMatches, setTotalMatches] = useState(0);
+
+    // Commands to trigger navigation in children
+    // Adding ID to ensure state change triggers useEffect even for same action type
+    const [searchAction, setSearchAction] = useState<{ type: 'next' | 'previous' | 'none', id: number }>({ type: 'none', id: 0 });
+
+    useEffect(() => {
+        if (window.electronAPI?.onMenuAction) {
+            const cleanup = window.electronAPI.onMenuAction((action) => {
+                if (action === 'new') handleNewRef.current();
+                if (action === 'open') handleOpenRef.current();
+                if (action === 'save') handleSaveRef.current();
+                if (action === 'save-as') handleSaveAsRef.current();
+                if (action === 'find') {
+                    setIsSearchVisible(true);
+                }
+            });
+            return cleanup;
+        }
+    }, []); // Empty dependency array: PERMANENT LISTENER
+
+    // Direct CMD+F keyboard listener as fallback
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+                e.preventDefault();
+                setIsSearchVisible(true);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown, true);
+        return () => window.removeEventListener('keydown', handleKeyDown, true);
+    }, []);
+
+    const handleSearchClose = () => {
+        setIsSearchVisible(false);
+        setSearchQuery('');
+        setTotalMatches(0);
+        setCurrentMatch(0);
+    };
+
+    const handleNextMatch = () => setSearchAction({ type: 'next', id: Date.now() });
+    const handlePrevMatch = () => setSearchAction({ type: 'previous', id: Date.now() });
+
+    // Callback from children to update stats
+    const handleSearchStatsUpdate = useCallback((current: number, total: number) => {
+        setCurrentMatch(current);
+        setTotalMatches(total);
+    }, []);
+
     return (
         <div className="flex flex-col h-full bg-[var(--bg-primary)] print:bg-white print:h-auto print:block relative">
+            <SearchToolbar
+                isVisible={isSearchVisible}
+                onClose={handleSearchClose}
+                onSearch={setSearchQuery}
+                onNext={handleNextMatch}
+                onPrevious={handlePrevMatch}
+                currentMatch={currentMatch}
+                totalMatches={totalMatches}
+            />
             <ConfirmationModal
                 isOpen={showUnsavedDialog}
                 onClose={handleCancelAction}
@@ -447,6 +537,7 @@ export const EditorManager = () => {
                     onSave={handleSave}
                     onSaveAs={handleSaveAs}
                     onExportPdf={handleExportPdf}
+                    onFind={() => setIsSearchVisible(true)}
                 />
             </div>
 
@@ -475,6 +566,10 @@ export const EditorManager = () => {
                                 onSelectionUpdate={handleSelectionUpdate}
                                 className="w-full flex justify-center py-10"
                                 onEditorReady={setEditorInstance}
+                                // Search Props
+                                searchQuery={searchQuery}
+                                searchAction={searchAction}
+                                onSearchStats={handleSearchStatsUpdate}
                             />
                         </div>
                     </div>
@@ -489,6 +584,10 @@ export const EditorManager = () => {
                             content={content}
                             onChange={handleCodeUpdate}
                             className="h-full"
+                            // Search Props
+                            searchQuery={searchQuery}
+                            searchAction={searchAction}
+                            onSearchStats={handleSearchStatsUpdate}
                         />
                     </div>
                 )}
